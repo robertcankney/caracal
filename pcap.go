@@ -1,6 +1,8 @@
 package caracal
 
 import (
+	"context"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -50,6 +52,26 @@ func (p *Packets) ParseFormat(format string) {
 			p.formatters = append(p.formatters, LinkFormat)
 		}
 	}
+}
+
+func (p *Packets) FormatPackets(ctx context.Context, source gopacket.PacketSource, w io.Writer) error {
+	done := ctx.Done()
+	for packet := range source.Packets() {
+		select {
+		case <-done:
+			return nil
+		default:
+			builder := strings.Builder{}
+			for _, format := range p.formatters {
+				format(&builder, packet)
+			}
+			_, err := w.Write([]byte(builder.String()))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func LinkFormat(build *strings.Builder, packet gopacket.Packet) {
