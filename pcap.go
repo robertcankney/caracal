@@ -23,6 +23,7 @@ type Packets struct {
 
 type Formatter func(*strings.Builder, gopacket.Packet)
 
+// TODO explore using rcvmmsg syscall to get raw packets while avoiding Cgo
 func (p *Packets) FromInterface(iface string) (gopacket.PacketDataSource, error) {
 	handle, err := pcap.OpenLive(iface, int32(p.size), true, p.timeout)
 	if err != nil {
@@ -50,6 +51,8 @@ func (p *Packets) ParseFormat(format string) {
 		switch format[i] {
 		case 'L':
 			p.formatters = append(p.formatters, LinkFormat)
+		case 'T':
+			p.formatters = append(p.formatters, TimestampFormat)
 		}
 	}
 }
@@ -89,4 +92,10 @@ func LinkFormat(build *strings.Builder, packet gopacket.Packet) {
 			return
 		}
 	}
+}
+
+func TimestampFormat(build *strings.Builder, packet gopacket.Packet) {
+	ts := packet.Metadata().Timestamp
+	build.WriteString(ts.Format(time.RFC3339))
+	return
 }

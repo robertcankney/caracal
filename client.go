@@ -57,11 +57,10 @@ func (c *Client) ConnectToPorts(ip net.IP, zone string, ports ...int) (map[int]n
 		wg := sync.WaitGroup{}
 		vals := make(chan int)
 
-		wg.Add(c.concurrency)
+		wg.Add(len(ports))
 		for i := 0; i < c.concurrency; i++ {
 			go func() {
-				for {
-					port := <-vals
+				for port := range vals {
 					conn, err := c.ConnectToPort(ip, zone, port)
 					if err != nil {
 						multiErr.errs = append(multiErr.errs, err)
@@ -78,30 +77,17 @@ func (c *Client) ConnectToPorts(ip net.IP, zone string, ports ...int) (map[int]n
 				vals <- port
 			}
 			wg.Wait()
+			close(vals)
 		}
 	}
 	return conns, &multiErr
 }
 
 func (c *Client) ConnectToPort(ip net.IP, zone string, port int) (net.Conn, error) {
-	network := strings.Builder{}
-	switch c.protocol {
-	case UDP:
-		network.WriteString("udp")
-	case TCP:
-		network.WriteString("tcp")
-	default:
-		return nil, fmt.Errorf("%w: bad protocol", ErrBadOption)
+	netw, err := buildNetwork(c.protocol, c.ipVersion)
+	if err != nil {
+		return nil, err
 	}
-
-	switch c.ipVersion {
-	case 4:
-		network.WriteString("4")
-	case 6:
-		network.WriteString("6")
-	}
-	netw := network.String()
-
 	// If we don't care about the local address, use the generic net.Dial function
 	if c.localAddr == "" {
 		if zone == "" {
@@ -172,4 +158,26 @@ func ParseAddr(addr string) (net.IP, int, string, error) {
 		return nil, 0, "", fmt.Errorf("%w: invalid port", ErrBadOption)
 	}
 	return net.ParseIP(portSplit[0]), port, zone, nil
+}
+
+func buildNetwork(protocol Protocol, ipVersion int) (string, error) {
+	network := strings.Builder{}
+	switch protocol {
+	case UDP:
+		network.WriteString("udp")
+	case TCP:
+		network.WriteString("tcp")
+	default:
+		return "", fmt.Errorf("%w: bad protocol", ErrBadOption)
+	}
+
+	switch ipVersion {
+	case 4, 0:
+		network.WriteString("4")
+	case 6:
+		network.WriteString("6")
+	default:
+		return "", fmt.Errorf("%w: bad IP protocol version", ErrBadOption)
+	}
+	return network.String(), nil
 }
